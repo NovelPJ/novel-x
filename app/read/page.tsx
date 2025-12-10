@@ -2,34 +2,38 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '../utils/supabase';
-import { ArrowLeft, Settings, MessageSquare, Menu, X, Minus, Plus, Moon, Sun, BookOpen, Loader2, Lock } from 'lucide-react';
+import { ArrowLeft, Settings, MessageSquare, Menu, X, Minus, Plus, Moon, Sun, BookOpen, Loader2, Lock, List } from 'lucide-react';
 import Link from 'next/link';
 
 export default function Reader() {
-  // --- STATE MANAGEMENT ---
-  const [chapterNum, setChapterNum] = useState(1); // Default to Chapter 1
+  // --- STATE ---
+  const [chapterNum, setChapterNum] = useState(1);
   const [chapter, setChapter] = useState<any>(null);
+  const [chapterList, setChapterList] = useState<any[]>([]); // New: Stores the Table of Contents
+  
   const [loading, setLoading] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
-  const [unlocking, setUnlocking] = useState(false); // Loading state for the purchase button
+  const [unlocking, setUnlocking] = useState(false);
   
-  // UI Settings
+  // UI State
   const [showControls, setShowControls] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showChapterList, setShowChapterList] = useState(false); // New: Controls the Chapter List Drawer
+  
   const [theme, setTheme] = useState<'light' | 'sepia' | 'dark'>('light');
   const [fontSize, setFontSize] = useState(18);
 
   const supabase = createClient();
 
-  // --- 1. FETCH DATA FUNCTION ---
+  // --- 1. FETCH CURRENT CHAPTER ---
   const getChapter = useCallback(async (num: number) => {
     setLoading(true);
     setIsLocked(false);
 
-    // A. Get the Chapter Text & Price
+    // Get Chapter Content
     const { data: chapterData, error } = await supabase
       .from('chapters')
-      .select('*, novels(title)')
+      .select('*, novels(id, title)') // We now fetch novel_id too
       .eq('chapter_number', num)
       .single();
 
@@ -41,67 +45,63 @@ export default function Reader() {
 
     setChapter(chapterData);
 
-    // B. SECURITY CHECK: If price > 0, did user buy it?
+    // If this is the first load, fetch the Table of Contents for this novel
+    if (chapterList.length === 0) {
+        const { data: allChapters } = await supabase
+            .from('chapters')
+            .select('id, title, chapter_number, price')
+            .eq('novel_id', chapterData.novels.id)
+            .order('chapter_number', { ascending: true });
+        
+        if (allChapters) setChapterList(allChapters);
+    }
+
+    // Security Check
     if (chapterData.price > 0) {
         const { data: { user } } = await supabase.auth.getUser();
-        
         if (user) {
-            // Check the "Unlocks" ledger
             const { data: unlock } = await supabase
                 .from('unlocks')
-                .select('*') // <--- CRITICAL FIX: This prevents the crash
+                .select('*')
                 .eq('user_id', user.id)
                 .eq('chapter_id', chapterData.id)
                 .single();
             
-            // If no unlock record found, BLOCK the user
             if (!unlock) setIsLocked(true);
         } else {
-            // Not logged in = Locked
-            setIsLocked(true); 
+            setIsLocked(true);
         }
     }
-    
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, chapterList.length]);
 
-  // --- 2. HANDLE PURCHASE FUNCTION ---
+  // --- 2. HANDLE UNLOCK ---
   const handleUnlock = async () => {
     setUnlocking(true);
-    
-    // Call the secure SQL function in the database
-    const { data, error } = await supabase.rpc('purchase_chapter', { 
-      chapter_id_input: chapter.id 
-    });
+    const { data } = await supabase.rpc('purchase_chapter', { chapter_id_input: chapter.id });
 
     if (data === 'success') {
-      setIsLocked(false); // Unlocks immediately without reloading
+      setIsLocked(false);
       alert("Purchase Successful!");
     } else {
-      alert("Failed: " + (data || "Not enough coins or error"));
+      alert("Failed: " + (data || "Error"));
     }
     setUnlocking(false);
   };
 
-  // Load chapter whenever chapterNum changes
   useEffect(() => {
     getChapter(chapterNum);
   }, [chapterNum, getChapter]);
 
-  // --- THEMES ---
+  // Theme Styles
   const themes = {
     light: "bg-white text-stone-900",
     sepia: "bg-[#F9F7F1] text-stone-800",
     dark:  "bg-[#1a1a1a] text-stone-300"
   };
 
-  if (loading) return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-white">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-        <p className="text-sm text-slate-500 font-medium">Loading Chapter {chapterNum}...</p>
-    </div>
-  );
-
+  // --- RENDER ---
+  if (loading && !chapter) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-600" /></div>;
   if (!chapter) return <div className="p-10 text-center">End of Book.</div>;
 
   return (
@@ -113,52 +113,91 @@ export default function Reader() {
         ${theme === 'dark' ? 'bg-[#1a1a1a]/90 border-stone-800' : 'bg-white/95 border-stone-200'} border-b backdrop-blur`}>
         <Link href="/" className="p-2"><ArrowLeft className="w-6 h-6" /></Link>
         <span className="font-serif font-bold text-sm truncate max-w-[200px]">{chapter.novels?.title}</span>
-        <button className="p-2"><Menu className="w-6 h-6" /></button>
+        
+        {/* NEW: Table of Contents Button */}
+        <button 
+            onClick={() => { setShowChapterList(true); setShowSettings(false); }}
+            className="p-2"
+        >
+            <List className="w-6 h-6" />
+        </button>
       </nav>
 
-      {/* --- CONTENT AREA --- */}
+      {/* TEXT CONTENT */}
       <article 
-        onClick={() => { setShowControls(!showControls); setShowSettings(false); }}
+        onClick={() => { setShowControls(!showControls); setShowSettings(false); setShowChapterList(false); }}
         className="px-6 py-24 max-w-2xl mx-auto font-serif leading-loose cursor-pointer select-none whitespace-pre-line"
         style={{ fontSize: `${fontSize}px` }}
       >
         <h1 className="text-2xl font-bold mb-8 text-center mt-4">{chapter.title}</h1>
         
-        {/* PAYWALL UI */}
         {isLocked ? (
             <div className="my-10 p-8 rounded-2xl bg-slate-100 border border-slate-200 text-center flex flex-col items-center gap-4 shadow-inner">
-                <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-2">
-                    <Lock className="w-8 h-8 text-indigo-600" />
-                </div>
-                <div>
-                    <h3 className="text-xl font-bold text-slate-900">Chapter Locked</h3>
-                    <p className="text-slate-500 text-sm mt-1">This chapter costs money to produce.</p>
-                </div>
-                <div className="bg-white px-6 py-2 rounded-lg border border-slate-200 shadow-sm">
-                    <span className="text-slate-500 text-sm">Price: </span>
-                    <span className="font-bold text-indigo-600 text-lg">{chapter.price} Coins</span>
-                </div>
-                
+                <Lock className="w-8 h-8 text-indigo-600" />
+                <h3 className="text-xl font-bold text-slate-900">Chapter Locked</h3>
+                <p className="text-slate-500 text-sm">Price: {chapter.price} Coins</p>
                 <button 
-                    onClick={(e) => {
-                        e.stopPropagation(); // Stop menu from toggling
-                        handleUnlock();
-                    }}
+                    onClick={(e) => { e.stopPropagation(); handleUnlock(); }}
                     disabled={unlocking}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-200 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                    className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform flex justify-center gap-2"
                 >
-                    {unlocking ? <Loader2 className="w-5 h-5 animate-spin" /> : "Unlock Now"}
+                    {unlocking ? <Loader2 className="animate-spin" /> : "Unlock Now"}
                 </button>
             </div>
         ) : (
-            // FREE/UNLOCKED CONTENT
-            <div className="opacity-90 animate-in fade-in duration-700">
-                {chapter.content}
-            </div>
+            <div className="opacity-90">{chapter.content}</div>
         )}
 
         {!isLocked && <div className="h-32 flex items-center justify-center text-sm opacity-50 italic mt-10">- End of Chapter -</div>}
       </article>
+
+      {/* --- NEW: CHAPTER LIST DRAWER --- */}
+      {showChapterList && (
+        <>
+            {/* Dark Overlay */}
+            <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowChapterList(false)} />
+            
+            {/* The Drawer Panel */}
+            <div className={`fixed inset-y-0 right-0 w-80 max-w-[80%] shadow-2xl z-50 flex flex-col transform transition-transform duration-300
+                ${theme === 'dark' ? 'bg-[#1a1a1a] text-white' : 'bg-white text-slate-800'}`}>
+                
+                <div className="p-4 border-b flex items-center justify-between">
+                    <h2 className="font-bold text-lg">Table of Contents</h2>
+                    <button onClick={() => setShowChapterList(false)}><X className="w-6 h-6" /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-2">
+                    {chapterList.map((c) => (
+                        <button 
+                            key={c.id}
+                            onClick={() => {
+                                setChapterNum(c.chapter_number);
+                                setShowChapterList(false);
+                            }}
+                            className={`w-full text-left p-4 rounded-xl mb-1 flex items-center justify-between transition-colors
+                                ${c.chapter_number === chapterNum 
+                                    ? 'bg-indigo-100 text-indigo-700 font-bold border border-indigo-200' 
+                                    : theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-slate-50'}`}
+                        >
+                            <div>
+                                <div className="text-xs opacity-60 uppercase mb-0.5">Chapter {c.chapter_number}</div>
+                                <div className="text-sm truncate w-40">{c.title}</div>
+                            </div>
+                            
+                            {/* Price Badge */}
+                            {c.price > 0 ? (
+                                <div className="flex items-center gap-1 text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded">
+                                    <Lock className="w-3 h-3" /> {c.price}
+                                </div>
+                            ) : (
+                                <div className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded">Free</div>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </>
+      )}
 
       {/* SETTINGS DRAWER */}
       {showSettings && (
@@ -175,9 +214,9 @@ export default function Reader() {
             <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase opacity-50">Theme</span>
                 <div className="flex gap-2">
-                    <button onClick={() => setTheme('light')} className="w-10 h-10 rounded-full bg-white border shadow-sm flex items-center justify-center"><Sun className="w-5 h-5 text-stone-800" /></button>
-                    <button onClick={() => setTheme('sepia')} className="w-10 h-10 rounded-full bg-[#F9F7F1] border shadow-sm flex items-center justify-center"><BookOpen className="w-5 h-5 text-amber-700" /></button>
-                    <button onClick={() => setTheme('dark')} className="w-10 h-10 rounded-full bg-[#1a1a1a] border shadow-sm flex items-center justify-center"><Moon className="w-5 h-5 text-white" /></button>
+                    <button onClick={() => setTheme('light')} className="w-10 h-10 rounded-full border shadow-sm flex items-center justify-center bg-white"><Sun className="w-5 h-5 text-stone-800" /></button>
+                    <button onClick={() => setTheme('sepia')} className="w-10 h-10 rounded-full border shadow-sm flex items-center justify-center bg-[#F9F7F1]"><BookOpen className="w-5 h-5 text-amber-700" /></button>
+                    <button onClick={() => setTheme('dark')} className="w-10 h-10 rounded-full border shadow-sm flex items-center justify-center bg-[#1a1a1a]"><Moon className="w-5 h-5 text-white" /></button>
                 </div>
             </div>
         </div>
@@ -198,12 +237,7 @@ export default function Reader() {
             <span className="text-[10px]">Comment</span>
          </button>
          
-         <button 
-            onClick={() => setChapterNum(chapterNum + 1)}
-            className="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold text-sm shadow-lg"
-         >
-            Next Chapter
-         </button>
+         <button onClick={() => setChapterNum(chapterNum + 1)} className="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold text-sm shadow-lg">Next</button>
       </footer>
 
     </main>
