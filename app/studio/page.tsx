@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '../utils/supabase';
-import { ArrowLeft, Upload, Loader2, CheckCircle, Book } from 'lucide-react';
+import { ArrowLeft, Upload, Loader2, CheckCircle, Book, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -10,7 +10,10 @@ export default function StudioPage() {
   const supabase = createClient();
   const router = useRouter();
 
-  // FORM DATA
+  // STATE
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true); // "Loading" state for security check
+
   const [novels, setNovels] = useState<any[]>([]);
   const [selectedNovel, setSelectedNovel] = useState('');
   const [title, setTitle] = useState('');
@@ -18,23 +21,48 @@ export default function StudioPage() {
   const [price, setPrice] = useState('0');
   const [content, setContent] = useState('');
   
-  // UI STATE
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // 1. Fetch available novels to select from
+  // 1. SECURITY CHECK (The Bouncer)
   useEffect(() => {
-    async function getNovels() {
-      const { data } = await supabase.from('novels').select('id, title');
-      if (data && data.length > 0) {
-        setNovels(data);
-        setSelectedNovel(data[0].id); // Auto-select first novel
+    async function checkAdmin() {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        router.push('/login'); // Not logged in? Go to login.
+        return;
+      }
+
+      // Check the Database Badge
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single();
+
+      if (profile && profile.is_admin) {
+        setIsAdmin(true); // You are allowed in
+        setCheckingAuth(false);
+        // Load Novels only if admin
+        fetchNovels(); 
+      } else {
+        router.push('/'); // Not admin? Go Home.
       }
     }
-    getNovels();
-  }, [supabase]);
+    checkAdmin();
+  }, [router, supabase]);
 
-  // 2. Handle Publish
+  // 2. Helper to fetch novels
+  async function fetchNovels() {
+    const { data } = await supabase.from('novels').select('id, title');
+    if (data && data.length > 0) {
+        setNovels(data);
+        setSelectedNovel(data[0].id);
+    }
+  }
+
+  // 3. Handle Publish
   const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -51,17 +79,27 @@ export default function StudioPage() {
       alert("Error: " + error.message);
     } else {
       setSuccess(true);
-      // Reset form after 2 seconds
       setTimeout(() => {
         setSuccess(false);
         setTitle('');
         setContent('');
-        setChapterNum(prev => (parseInt(prev) + 1).toString()); // Auto-increment chapter number
+        setChapterNum(prev => (parseInt(prev) + 1).toString());
       }, 2000);
     }
     setLoading(false);
   };
 
+  // 4. RENDER LOADING SCREEN while checking ID
+  if (checkingAuth) {
+    return (
+        <div className="min-h-screen flex items-center justify-center gap-2">
+            <Loader2 className="animate-spin text-indigo-600" />
+            <span className="text-slate-500 font-bold">Verifying Admin Access...</span>
+        </div>
+    );
+  }
+
+  // If we get here, isAdmin is true
   return (
     <main className="min-h-screen bg-slate-50 p-6">
       
@@ -71,7 +109,12 @@ export default function StudioPage() {
             <Link href="/" className="p-2 bg-white rounded-full border border-slate-200 hover:bg-slate-100">
                 <ArrowLeft className="w-5 h-5 text-slate-600" />
             </Link>
-            <h1 className="text-2xl font-bold text-slate-800">Writer's Studio</h1>
+            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                <Lock className="w-5 h-5 text-indigo-600" /> Writer's Studio
+            </h1>
+        </div>
+        <div className="px-3 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full uppercase tracking-wider">
+            Admin Mode
         </div>
       </div>
 
@@ -96,7 +139,6 @@ export default function StudioPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-6 mb-6">
-            {/* Chapter Number */}
             <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Chapter #</label>
                 <input 
@@ -108,7 +150,6 @@ export default function StudioPage() {
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
             </div>
-            {/* Price */}
             <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Price (Coins)</label>
                 <input 
@@ -122,7 +163,6 @@ export default function StudioPage() {
             </div>
         </div>
 
-        {/* Chapter Title */}
         <div className="mb-6">
             <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Chapter Title</label>
             <input 
@@ -135,7 +175,6 @@ export default function StudioPage() {
             />
         </div>
 
-        {/* Content Area */}
         <div className="mb-8">
             <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Story Content</label>
             <textarea 
@@ -148,7 +187,6 @@ export default function StudioPage() {
             />
         </div>
 
-        {/* Submit Button */}
         <button 
             type="submit" 
             disabled={loading || success}
