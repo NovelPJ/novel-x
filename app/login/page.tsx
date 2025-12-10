@@ -21,7 +21,7 @@ export default function LoginPage() {
       email,
       options: {
         // WE ARE HARDCODING THE LIVE URL HERE
-        emailRedirectTo: 'https://novel-x.vercel.app/auth/callback', 
+        emailRedirectTo: 'https://novel-x-pi.vercel.app/auth/callback', 
       },
     });
 
