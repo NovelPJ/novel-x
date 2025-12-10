@@ -17,10 +17,11 @@ export default function LoginPage() {
     setLoading(true);
     setMessage(null);
 
-    const { error } = await supabase.auth.signInWithOtp({
+   const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${location.origin}/auth/callback`,
+        // WE ARE HARDCODING THE LIVE URL HERE
+        emailRedirectTo: 'https://novel-x.vercel.app/auth/callback', 
       },
     });
 
