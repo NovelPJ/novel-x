@@ -1,4 +1,4 @@
-import { Search, Bell, BookOpen, Star, TrendingUp } from 'lucide-react';
+import { Search, Bell, BookOpen, Star, TrendingUp, User } from 'lucide-react';
 import Link from 'next/link';
 
 export default function Home() {
@@ -84,10 +84,15 @@ export default function Home() {
            <Search className="w-6 h-6" />
            <span className="text-[10px]">Explore</span>
         </div>
-        <div className="flex flex-col items-center gap-1 text-slate-400">
-           <div className="w-6 h-6 rounded-full bg-slate-200"></div>
+        
+        {/* THIS IS THE NEW PROFILE LINK */}
+        <Link href="/account" className="flex flex-col items-center gap-1 text-slate-400">
+           <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center">
+             <User className="w-4 h-4 text-slate-500" />
+           </div>
            <span className="text-[10px]">Profile</span>
-        </div>
+        </Link>
+
       </nav>
 
     </main>
