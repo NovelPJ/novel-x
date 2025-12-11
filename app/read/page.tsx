@@ -44,6 +44,21 @@ export default function Reader() {
     }
 
     setChapter(chapterData);
+    setChapter(chapterData);
+    
+    // --- INSERT THIS NEW BLOCK HERE ---
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+        // Save progress to database
+        await supabase.from('reading_history').upsert({
+            user_id: user.id,
+            novel_id: chapterData.novels.id, // Make sure your fetch query includes novels(id, title)
+            chapter_id: chapterData.id,
+            chapter_number: chapterData.chapter_number,
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id, novel_id' });
+    }
+    // ----------------------------------
 
     // If this is the first load, fetch the Table of Contents for this novel
     if (chapterList.length === 0) {

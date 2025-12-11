@@ -1,7 +1,36 @@
-import { Search, Bell, BookOpen, Star, TrendingUp, User } from 'lucide-react';
+"use client";
+
+import { useEffect, useState } from 'react';
+import { createClient } from './utils/supabase'; // Import Supabase
+import { Search, Bell, BookOpen, Star, TrendingUp, User, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 export default function Home() {
+  const supabase = createClient();
+  const [history, setHistory] = useState<any>(null); // Stores the last book you read
+  const [loading, setLoading] = useState(true);
+
+  // FETCH HISTORY
+  useEffect(() => {
+    async function fetchHistory() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Get the most recently updated book
+        const { data } = await supabase
+            .from('reading_history')
+            .select('*, novels(title, cover_url)')
+            .eq('user_id', user.id)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .single();
+        
+        if (data) setHistory(data);
+      }
+      setLoading(false);
+    }
+    fetchHistory();
+  }, []);
+
   return (
     <main className="min-h-screen pb-20 bg-slate-50">
       
@@ -31,17 +60,28 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 3. CONTINUE READING (Linked to /read) */}
-      <section className="mt-6 px-4">
+      {/* 3. JUMP BACK IN (Dynamic) */}
+      {/* Only show this section if we found history */}
+      {history && (
+      <section className="mt-6 px-4 animate-in slide-in-from-bottom-5 duration-700">
         <div className="flex justify-between items-end mb-3">
           <h3 className="font-bold text-slate-800 text-lg">Jump Back In</h3>
         </div>
-        <Link href="/read">
+        {/* We link specifically to the last chapter they read */}
+        <Link href={`/read`}> 
+        {/* Note: ideally link to /read?chapter=${history.chapter_number} but for now basic read is fine */}
           <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex gap-4 items-center cursor-pointer hover:bg-slate-50 transition-colors">
-            <div className="w-12 h-16 bg-slate-200 rounded-md shrink-0"></div>
+            
+            {/* Dynamic Cover */}
+            <div className="w-12 h-16 bg-slate-200 rounded-md shrink-0 overflow-hidden">
+                {history.novels?.cover_url && <img src={history.novels.cover_url} className="w-full h-full object-cover" />}
+            </div>
+            
             <div className="flex-1">
-              <h4 className="font-bold text-sm text-slate-800">My CEO Husband</h4>
-              <p className="text-xs text-slate-500 mt-1">Chapter 42 • 8 mins left</p>
+              <h4 className="font-bold text-sm text-slate-800">{history.novels?.title}</h4>
+              <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                <ArrowRight className="w-3 h-3" /> Continue Chapter {history.chapter_number}
+              </p>
               <div className="w-full h-1 bg-slate-100 rounded-full mt-2">
                 <div className="w-[70%] h-full bg-indigo-500 rounded-full"></div>
               </div>
@@ -49,6 +89,7 @@ export default function Home() {
           </div>
         </Link>
       </section>
+      )}
 
       {/* 4. SWIMLANE LIST */}
       <section className="mt-8">
@@ -75,24 +116,23 @@ export default function Home() {
       </section>
 
       {/* 5. NAVIGATION BAR */}
-      <nav className="fixed bottom-0 w-full bg-white border-t border-slate-100 px-6 py-3 flex justify-between items-center z-50 safe-area-bottom">
+      <nav className="fixed bottom-0 w-full bg-white border-t border-slate-100 px-6 pt-3 pb-8 flex justify-between items-center z-50">
         <div className="flex flex-col items-center gap-1 text-indigo-600">
            <BookOpen className="w-6 h-6" />
            <span className="text-[10px] font-bold">Home</span>
         </div>
-        <div className="flex flex-col items-center gap-1 text-slate-400">
+        
+        <Link href="/explore" className="flex flex-col items-center gap-1 text-slate-400 active:scale-95 transition-transform">
            <Search className="w-6 h-6" />
            <span className="text-[10px]">Explore</span>
-        </div>
+        </Link>
         
-        {/* THIS IS THE NEW PROFILE LINK */}
-        <Link href="/account" className="flex flex-col items-center gap-1 text-slate-400">
+        <Link href="/account" className="flex flex-col items-center gap-1 text-slate-400 active:scale-95 transition-transform">
            <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center">
              <User className="w-4 h-4 text-slate-500" />
            </div>
            <span className="text-[10px]">Profile</span>
         </Link>
-
       </nav>
 
     </main>
